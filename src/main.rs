@@ -122,7 +122,10 @@ async fn main(_spawner: Spawner) {
                         if let Err(e) = flash.write(APP_OFFSET, &metadata) {
                             error!("Metadata write failed: {:?}", e);
                         } else {
-                            info!("Update complete!");
+                            info!("Update complete! Resetting system...");
+                            // Wait a bit for the message to be sent
+                            for _ in 0..100000 { core::hint::spin_loop(); }
+                            cortex_m::peripheral::SCB::sys_reset();
                         }
                     } else {
                         error!("CRC mismatch! Application might be corrupted.");
