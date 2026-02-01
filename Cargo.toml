@@ -17,6 +17,7 @@ embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", features
 embassy-time = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt", "defmt-timestamp-uptime"] }
 embassy-rp = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt", "rp235xa", "time-driver", "critical-section-impl", "binary-info"] }
 embassy-futures = { git = "https://github.com/embassy-rs/embassy.git" }
+crc = "3.0"
 panic-probe = { version = "1", features = ["print-defmt"] }
 
 [profile.release]
