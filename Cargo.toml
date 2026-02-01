@@ -1,0 +1,20 @@
+[package]
+edition = "2024"
+name = "pico2w-bootloader-rs"
+version = "0.1.0"
+license = "MIT or Apache-2.0"
+
+[dependencies]
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+embedded-hal = "1.0.0"
+defmt = "1"
+defmt-rtt = "1"
+static_cell = "2"
+embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", features = ["arch-cortex-m", "executor-thread", "defmt"] }
+embassy-time = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt", "defmt-timestamp-uptime"] }
+embassy-rp = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt", "rp235xa", "time-driver", "critical-section-impl", "binary-info"] }
+panic-probe = { version = "1", features = ["print-defmt"] }
+
+[profile.release]
+debug = 2
