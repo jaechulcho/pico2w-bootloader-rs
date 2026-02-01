@@ -54,14 +54,32 @@ async fn main(_spawner: Spawner) {
         warn!("Application is corrupted or missing! Entering Update Mode.");
     } else {
         info!("Application healthy. Press 'u' for Update, or wait 3s to Jump...");
-        match select(Timer::after(Duration::from_secs(3)), uart.read(&mut uart_buf)).await {
-            Either::First(_) => {
+        let start_time = embassy_time::Instant::now();
+        let timeout = Duration::from_secs(3);
+        loop {
+            let elapsed = start_time.elapsed();
+            if elapsed >= timeout {
                 info!("Timeout, jumping to app...");
+                break;
             }
-            Either::Second(res) => {
-                if res.is_ok() && uart_buf[0] == b'u' {
-                    update_mode = true;
-                    info!("Entering Update Mode!");
+            let remaining = timeout - elapsed;
+            match select(Timer::after(remaining), uart.read(&mut uart_buf)).await {
+                Either::First(_) => {
+                    info!("Timeout, jumping to app...");
+                    break;
+                }
+                Either::Second(res) => {
+                    if res.is_ok() {
+                        let c = uart_buf[0];
+                        if c == b'u' || c == b'p' {
+                            update_mode = true;
+                            info!("Entering Update Mode!");
+                            break;
+                        } else {
+                            // Ignore other characters (like trailing 'reboot\r\n' junk)
+                            debug!("Ignored byte during wait: 0x{:02x}", c);
+                        }
+                    }
                 }
             }
         }
@@ -91,6 +109,10 @@ async fn main(_spawner: Spawner) {
             if let Err(e) = flash.erase(APP_OFFSET, APP_OFFSET + total_erase) {
                 error!("Erase failed: {:?}", e);
             } else {
+                // Send ACK ONLY AFTER successful erase.
+                // This prevents the downloader from timing out while we are busy erasing.
+                let _ = uart.write(&[0x06]).await;
+
                 let mut write_buf = [0u8; 4096];
                 let mut received = 0;
                 
@@ -104,6 +126,9 @@ async fn main(_spawner: Spawner) {
                         }
                         received += chunk_len as u32;
                         info!("Received {}/{} bytes", received, len);
+                        
+                        // Send ACK for each chunk
+                        let _ = uart.write(&[0x06]).await;
                     } else {
                         error!("UART read failed");
                         break;
@@ -160,12 +185,12 @@ unsafe fn is_app_healthy(address: u32) -> bool {
         return false;
     }
 
-    verify_flash_crc(address + METADATA_SIZE, len, expected_crc)
+    unsafe { verify_flash_crc(address + METADATA_SIZE, len, expected_crc) }
 }
 
 unsafe fn verify_flash_crc(address: u32, len: u32, expected: u32) -> bool {
     let data = unsafe { core::slice::from_raw_parts(address as *const u8, len as usize) };
-    let mut crc = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
+    let crc = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
     let mut digest = crc.digest();
     digest.update(data);
     let calculated = digest.finalize();
