@@ -23,7 +23,7 @@ bind_interrupts!(struct Irqs {
 const APP_OFFSET: u32 = 64 * 1024; // 64KB
 const FLASH_BASE_ADDR: u32 = 0x1000_0000;
 const APP_BASE: u32 = FLASH_BASE_ADDR + APP_OFFSET;
-const METADATA_SIZE: u32 = 256; // One flash page
+const METADATA_SIZE: u32 = 4096; // One flash page
 const REAL_APP_BASE: u32 = APP_BASE + METADATA_SIZE;
 
 const MAGIC_APPS: &[u8; 4] = b"APPS";
@@ -139,7 +139,7 @@ async fn main(_spawner: Spawner) {
                     info!("Verifying CRC32...");
                     if unsafe { verify_flash_crc(APP_BASE + METADATA_SIZE, len, crc_val) } {
                         info!("CRC OK! Writing metadata...");
-                        let mut metadata = [0u8; 256];
+                        let mut metadata = [0u8; 4096];
                         metadata[0..4].copy_from_slice(MAGIC_APPS);
                         metadata[4..8].copy_from_slice(&len.to_le_bytes());
                         metadata[8..12].copy_from_slice(&crc_val.to_le_bytes());
