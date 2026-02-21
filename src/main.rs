@@ -11,6 +11,7 @@ use embassy_rp::uart::{Config as UartConfig, InterruptHandler as UartInterruptHa
 use embassy_rp::{bind_interrupts, dma};
 use embassy_time::{Duration, Timer};
 use embedded_storage::nor_flash::NorFlash;
+use core::sync::atomic::{AtomicU8, Ordering};
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
@@ -28,10 +29,58 @@ const REAL_APP_BASE: u32 = APP_BASE + METADATA_SIZE;
 
 const MAGIC_APPS: &[u8; 4] = b"APPS";
 
+static LED_MODE: AtomicU8 = AtomicU8::new(0); // 0 = Boot, 1 = Download, 2 = Solid On (App check)
+
+#[embassy_executor::task]
+async fn blink_task(mut led: Output<'static>) {
+    loop {
+        let mode = LED_MODE.load(Ordering::Relaxed);
+        match mode {
+            0 => { // Boot mode (waiting): 100ms on, 900ms off
+                led.set_high();
+                Timer::after(Duration::from_millis(100)).await;
+                led.set_low();
+                Timer::after(Duration::from_millis(900)).await;
+            }
+            1 => { // Download mode: 100 on, 200 off, 100 on, 600 off
+                led.set_high();
+                Timer::after(Duration::from_millis(100)).await;
+                led.set_low();
+                Timer::after(Duration::from_millis(200)).await;
+                led.set_high();
+                Timer::after(Duration::from_millis(100)).await;
+                led.set_low();
+                Timer::after(Duration::from_millis(600)).await;
+            }
+            _ => { // Solid on or app checked
+                led.set_high();
+                Timer::after(Duration::from_millis(100)).await;
+            }
+        }
+    }
+}
+
+#[unsafe(link_section = ".uninit")]
+static mut REBOOT_MAGIC: u32 = 0;
+#[unsafe(link_section = ".uninit")]
+static mut REBOOT_DEST: u32 = 0;
+
 #[embassy_executor::main]
-async fn main(_spawner: Spawner) {
+async fn main(spawner: Spawner) {
+    // Check if we just did a warm reboot to jump to the app.
+    // This allows jumping to the app with a 100% clean hardware state!
+    unsafe {
+        let magic = core::ptr::read_volatile(core::ptr::addr_of!(REBOOT_MAGIC));
+        if magic == 0xDEADBEEF {
+            let dest = core::ptr::read_volatile(core::ptr::addr_of!(REBOOT_DEST));
+            core::ptr::write_volatile(core::ptr::addr_of_mut!(REBOOT_MAGIC), 0); // clear it
+            jump_to_app(dest);
+        }
+    }
+
     let p = embassy_rp::init(Default::default());
-    let mut led = Output::new(p.PIN_28, Level::Low);
+    let led = Output::new(p.PIN_28, Level::Low);
+    spawner.spawn(defmt::unwrap!(blink_task(led)));
 
     // Initial UART setup for status/DFU
     let mut uart_config = UartConfig::default();
@@ -39,7 +88,7 @@ async fn main(_spawner: Spawner) {
     let mut uart = Uart::new(p.UART0, p.PIN_0, p.PIN_1, Irqs, p.DMA_CH0, p.DMA_CH1, uart_config);
 
     info!("pico2w-bootloader-rs starting...");
-    led.set_high();
+    LED_MODE.store(0, Ordering::Relaxed);
 
     // Flash driver setup
     let mut flash: Flash<FLASH, Async, { 2 * 1024 * 1024 }> = Flash::new(p.FLASH, p.DMA_CH2, Irqs);
@@ -86,7 +135,7 @@ async fn main(_spawner: Spawner) {
     }
 
     if update_mode {
-        led.set_low();
+        LED_MODE.store(1, Ordering::Relaxed);
         info!("DFU Mode: Wait for magic 0xAA...");
         
         loop {
@@ -160,11 +209,19 @@ async fn main(_spawner: Spawner) {
         }
     }
 
-    led.set_low();
+    LED_MODE.store(2, Ordering::Relaxed);
     info!("Jumping to app at 0x{:x}...", REAL_APP_BASE);
     for _ in 0..100000 { core::hint::spin_loop(); }
+    
     unsafe {
-        jump_to_app(REAL_APP_BASE);
+        info!("Clean reboot to app...");
+        core::ptr::write_volatile(core::ptr::addr_of_mut!(REBOOT_DEST), REAL_APP_BASE);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!(REBOOT_MAGIC), 0xDEADBEEF);
+        
+        // Wait briefly for RAM write to flush
+        for _ in 0..1000 { core::hint::spin_loop(); }
+        
+        cortex_m::peripheral::SCB::sys_reset();
     }
 }
 

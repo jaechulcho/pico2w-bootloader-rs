@@ -19,6 +19,7 @@ embassy-rp = { git = "https://github.com/embassy-rs/embassy.git", features = ["d
 embassy-futures = { git = "https://github.com/embassy-rs/embassy.git" }
 crc = "3.0"
 panic-probe = { version = "1", features = ["print-defmt"] }
+rp235x-pac = "0.2.0"
 
 [profile.release]
 debug = 2
