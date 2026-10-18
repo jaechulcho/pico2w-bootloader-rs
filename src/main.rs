@@ -29,6 +29,15 @@ const REAL_APP_BASE: u32 = APP_BASE + METADATA_SIZE;
 
 const MAGIC_APPS: &[u8; 4] = b"APPS";
 
+/// 부트로더 버전 문자열 (`Cargo.toml`의 `version` 필드와 자동 동기화)
+pub const BOOTLOADER_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// 메인 펌웨어(App)에서 부트로더 플래시 영역(`0x1000_0000..0x1001_0000`)을 읽어
+/// 부트로더 버전을 프로그램적으로 식별할 수 있도록 고정 마커(`BLVER:`)와 함께 내장합니다.
+#[used]
+pub static BOOTLOADER_VERSION_TAG: &[u8] =
+    concat!("BLVER:", env!("CARGO_PKG_VERSION"), "\0").as_bytes();
+
 static LED_MODE: AtomicU8 = AtomicU8::new(0); // 0 = Boot, 1 = Download, 2 = Solid On (App check)
 
 #[embassy_executor::task]
@@ -87,7 +96,9 @@ async fn main(spawner: Spawner) {
     uart_config.baudrate = 115200;
     let mut uart = Uart::new(p.UART0, p.PIN_0, p.PIN_1, Irqs, p.DMA_CH0, p.DMA_CH1, uart_config);
 
-    info!("pico2w-bootloader-rs starting...");
+    // 컴파일러가 BOOTLOADER_VERSION_TAG 심볼을 최적화로 제거하지 않도록 참조 유지
+    core::hint::black_box(BOOTLOADER_VERSION_TAG);
+    info!("pico2w-bootloader-rs v{} starting...", BOOTLOADER_VERSION);
     LED_MODE.store(0, Ordering::Relaxed);
 
     // Flash driver setup
