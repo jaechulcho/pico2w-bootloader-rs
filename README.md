@@ -6,14 +6,15 @@ Raspberry Pi Pico 2 W (RP2350)를 위한 안전하고 견고한 Rust 기반 부�
 
 - **무결성 검증 (CRC32)**: 애플리케이션의 매직 넘버("APPS")와 전체 이미지의 CRC32 체크섬을 검증하여 안전한 부팅을 보장합니다.
 - **자동 DFU 모드 진입**: 애플리케이션이 없거나 체크섬이 손상된 경우 자동으로 업데이트 모드로 진입합니다.
-- **UART DFU (Device Firmware Update)**: 시리얼 통신(UART)을 통해 새로운 펌웨어를 업로드할 수 있습니다.
+- **UART DFU (Device Firmware Update)**: 시리얼 통신(UART0)을 통해 새로운 펌웨어를 업로드할 수 있습니다.
 - **안전한 부팅 (Safe Jump)**: `VTOR` 설정 및 스택 포인터 검증을 통해 애플리케이션으로 안전하게 점프합니다.
 
 ## 메모리 레이아웃
 
 - **Bootloader (64KB)**: `0x10000000` ~ `0x1000FFFF`
-- **Metadata (256B)**: `0x10010000` ~ `0x100100FF` (Magic, Length, CRC32 포함)
-- **Application**: `0x10010100` ~
+- **Metadata (4KB)**: `0x10010000` ~ `0x10010FFF` (Magic, Length, CRC32 포함)
+- **Application**: `0x10011000` ~ `0x101FFFFF` (~1.9MB)
+- **FileSystem (2MB)**: `0x10200000` ~ `0x103FFFFF` (LittleFS)
 
 ## UART DFU 프로토콜
 
@@ -24,11 +25,22 @@ Raspberry Pi Pico 2 W (RP2350)를 위한 안전하고 견고한 Rust 기반 부�
 3. **헤더 (8 bytes)**: `[Length (4B, LE) | CRC32 (4B, LE)]`
 4. **데이터**: 애플리케이션 바이너리 (`Length` 만큼 전송)
 
-## 빌드 및 실행
+## 빌드 및 플래싱 방법
 
+### 1. 빌드
 ```bash
-# 빌드 및 플래싱
-cargo run --release
+cargo build --release
+```
+
+### 2. 최초 실기 플래싱 (BOOTSEL 모드)
+Pico 2 W의 BOOTSEL 버튼을 누른 채 PC에 연결한 후:
+```bash
+sudo picotool load -v -x target/thumbv8m.main-none-eabihf/release/pico2w-bootloader-rs -t elf
+```
+
+### 3. SWD 직통 디버깅 / 플래싱 (Debug Probe 사용 시)
+```bash
+probe-rs run --chip RP235x --protocol swd
 ```
 
 ## 시스템 연동 (원격 업데이트)
